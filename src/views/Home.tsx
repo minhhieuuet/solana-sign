@@ -1,10 +1,22 @@
 import { useState, useEffect } from "react";
 import * as nacl from 'tweetnacl';
+import idl from '../idl/skool.json';
+import {
+  Idl,
+  Program, Provider, web3,
+  BN,
+  utils
+} from '@project-serum/anchor';
+import { Connection, PublicKey } from '@solana/web3.js';
+const { SystemProgram, Keypair } = web3;
+import { useWallet, WalletProvider, ConnectionProvider } from '@solana/wallet-adapter-react';
+
 export const Home = () => {
   const message = `Please sign this message to verify this wallet belongs to you.`;
   const [walletKey, setWalletKey] = useState('');
   const [signature, setSignedSignature] = useState('');
   const [publicKey, setPublicKey] = useState('');
+  const wallet = useWallet()
 
   useEffect(() => {
     (async () => {
@@ -72,19 +84,55 @@ export const Home = () => {
   }
 
   const verify = async () => {
-    if(signature == '') {
+    if (signature == '') {
       alert('Please sign a message first')
       return
     }
     let signatureBuffer = Uint8Array.from(atob(signature), c => c.charCodeAt(0));
     let publicKeyBuffer = Uint8Array.from(atob(publicKey), c => c.charCodeAt(0));
     const verified = nacl.sign.detached.verify(new TextEncoder().encode(message), signatureBuffer, publicKeyBuffer);
-    if(verified) {
+    if (verified) {
       alert('Verified!')
     } else {
       alert('Not verified!')
     }
 
+  }
+
+  const buyTickets = async () => {
+
+    const programID = new PublicKey(idl.metadata.address);
+    /* create the program interface combining the idl, program ID, and provider */
+    const network = "https://api.devnet.solana.com";
+    const provider = getProvider();
+    //@ts-ignore
+    const program = new Program(idl, programID, provider);
+    const BENEFICIARY = "8gp98u7TzYEjPc71euKwuCCbrY77srZY3u3ct3aEJRcJ";
+     const [dataPDA, _] = await PublicKey.findProgramAddress(
+      [
+        utils.bytes.utf8.encode('data')
+      ],
+      program.programId
+    )
+    const tx = program.transaction.buyTicket(
+      new BN(1),
+      {
+        accounts: {
+          beneficiary: BENEFICIARY,
+          payer: provider.publicKey,
+          data: dataPDA,
+          systemProgram: SystemProgram.programId,
+        },
+        signer: []
+      },
+    );
+    const connection = new Connection("https://api.devnet.solana.com");
+    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    tx.feePayer = provider.publicKey;
+    const signedTx = await provider.signTransaction(tx);
+    const txId = await connection.sendRawTransaction(signedTx.serialize());
+    await connection.confirmTransaction(txId)
+    console.log(`Tx Id:` + txId);
   }
 
   return (
@@ -101,6 +149,9 @@ export const Home = () => {
           <p><b>Signature: </b>{signature}</p>
         }
       </div>
+      <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mx-8" onClick={buyTickets}>
+        Buy 1 Ticket
+      </button>
     </section>
   );
 };
